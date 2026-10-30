@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # infrastructure. docker-compose and production override this via the
     # DATABASE_URL environment variable (validate_runtime enforces Postgres in prod).
     DATABASE_URL: str = "sqlite:///./dev.db"
+    DB_FORCE_IPV4: bool = False
     SECRET_KEY: str = _DEFAULT_SECRET
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 

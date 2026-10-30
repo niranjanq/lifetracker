@@ -17,9 +17,22 @@ from tests.conftest import csrf, login, register
 @pytest.fixture
 def mock_provider(monkeypatch):
     provider = MockProvider()
-    monkeypatch.setattr(chat_routes, "build_provider", lambda: provider)
-    return provider
 
+    # Keep these tests independent of real provider configuration.
+    # Consent behavior is tested separately below.
+    monkeypatch.setattr(chat_routes, "build_provider", lambda: provider)
+    monkeypatch.setattr(
+        chat_routes,
+        "provider_status",
+        lambda: {
+            "configured": False,
+            "provider": None,
+            "providerLabel": None,
+            "model": None,
+        },
+    )
+
+    return provider
 
 def _authed(email):
     c = TestClient(app)

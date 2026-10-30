@@ -66,3 +66,36 @@ def test_retention_is_per_user(db_session):
     run_retention(db_session, now=now)
     assert db_session.query(ChatMessage).filter(ChatMessage.user_id == a.pk).count() == 0
     assert db_session.query(ChatMessage).filter(ChatMessage.user_id == b.pk).count() == 1
+
+def test_retention_does_not_delete_another_users_empty_thread(db_session):
+    now = datetime.now(timezone.utc)
+
+    a = _mk_user(db_session, "ret_empty_a@example.com")
+    b = _mk_user(db_session, "ret_empty_b@example.com")
+
+    # User A has an old message that should expire.
+    _mk_thread_msg(db_session, a.pk, now - timedelta(days=45))
+    threads.set_retention(db_session, a.pk, 30)
+
+    # User B has an intentionally empty thread.
+    empty_thread = ChatThread(
+        pk=str(uuid.uuid4()),
+        user_id=b.pk,
+        title="My empty conversation",
+        created_at=now,
+        updated_at=now,
+        last_message_at=None,
+    )
+    db_session.add(empty_thread)
+    db_session.flush()
+
+    threads.set_retention(db_session, b.pk, 365)
+
+    run_retention(db_session, now=now)
+
+    # User B's thread must not be deleted by User A's cleanup.
+    remaining = db_session.query(ChatThread).filter(
+        ChatThread.pk == empty_thread.pk
+    ).one_or_none()
+
+    assert remaining is not None

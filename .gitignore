@@ -78,3 +78,6 @@ desktop.ini
 # ---------- Docker / Mailpit local data (if bind-mounted locally) ----------
 mailpit-data/
 pgdata/
+# Firebase Admin credentials
+firebase-admin-key.json
+*service-account*.json

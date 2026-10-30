@@ -24,7 +24,8 @@ from app.services import ensure_settings
 from ..config import settings
 from ..models import ChatMessage
 from ..providers import build_provider, provider_status
-from ..services import chat, retention, threads
+from ..services import chat, threads
+
 
 router = APIRouter(prefix="/api/chat", tags=["assistant"])
 
@@ -224,13 +225,6 @@ def delete_history(db: DbSession = Depends(get_db), user: User = Depends(get_cur
     n = threads.delete_all_history(db, user.pk)
     return {"ok": True, "deletedMessages": n}
 
-
-# --- retention maintenance (ops) ---------------------------------------------
-@router.post("/maintenance/retention")
-def run_retention(db: DbSession = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
-    # Authenticated maintenance trigger; a scheduler or CLI (`python -m
-    # chatagent.chatbot.services.retention`) runs the same logic unattended.
-    return retention.run_retention(db)
 
 
 def _thread_dict(t) -> dict:
