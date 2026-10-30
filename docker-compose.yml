@@ -1,0 +1,82 @@
+# Local development / self-hosting stack for Personal Life Tracker.
+# Copy backend/.env.example to backend/.env and .env.example to .env first,
+# then: docker compose up --build
+#
+# NOTE: This stack is meant for LOCAL / private-network use. It has NOT been
+# penetration-tested or verified against a real production deployment. For a
+# public deployment you must set ENV=production and satisfy every requirement
+# enforced by backend/app/core/config.py::validate_runtime (real SECRET_KEY,
+# HTTPS cookies, real SMTP, https FRONTEND_ORIGIN, PostgreSQL). Email delivery
+# defaults to the Mailpit catcher below; it NEVER reaches a real inbox - switch
+# EMAIL_PROVIDER to resend/smtp for production mail.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plt
+      POSTGRES_PASSWORD: plt
+      POSTGRES_DB: life_tracker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plt -d life_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025" # web UI to inspect "sent" mail locally
+    # SMTP is reachable by the backend at mailpit:1025 (no host publish needed).
+
+  backend:
+    build:
+      # Repo-root context so the Dockerfile can COPY both `backend/` and the
+      # sibling `chatagent/` assistant package into the image.
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://plt:plt@db:5432/life_tracker
+      # Default dev delivery -> Mailpit catcher (UI at http://localhost:8025).
+      # This does NOT send to real inboxes. For real email set EMAIL_PROVIDER=resend
+      # and provide RESEND_API_KEY (or switch to a real smtp relay).
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mailpit}
+      EMAIL_FROM: ${EMAIL_FROM:-Personal Life Tracker <no-reply@lifetracker.app>}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      # The read-only assistant reads LLM_MODEL / LLM_BASE_URL / LLM_API_KEY from
+      # ./backend/.env (env_file above). They are server-side only and are never
+      # exposed to the frontend. Leave them blank to keep the assistant disabled.
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /web
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_PROXY: http://backend:8000
+    volumes:
+      - .:/web
+      - /web/node_modules
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:5173:5173"
+
+volumes:
+  pgdata:
