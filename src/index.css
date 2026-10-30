@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Locked visual design tokens (see DESIGN.md + product brief) */
+  --c-bg: #080d18;
+  --c-surface: #101827;
+  --c-raised: #151f30;
+  --c-lowest: #0a0e16;
+  --c-text: #f2f5fc;
+  --c-muted: #9aa8bd;
+  --c-border: rgba(255, 255, 255, 0.09);
+
+  /* Semantic state colors — always paired with an icon/text, never color alone */
+  --c-success: #b7f774;
+  --c-warning: #ffd166;
+  --c-danger: #ff9eae;
+
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--c-bg);
+  color: var(--c-text);
+  font-family: Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Subtle ambient background gradient */
+  background-image:
+    radial-gradient(900px 500px at 12% -8%, rgba(183, 247, 116, 0.06), transparent 60%),
+    radial-gradient(800px 520px at 100% 0%, rgba(155, 138, 251, 0.07), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* Numerical alignment for metrics and tables */
+.nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Focus visibility (keyboard accessibility) */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--c-lime, #b7f774);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 9999px;
+}
+
+/* Glass surface helper */
+.glass {
+  background: color-mix(in srgb, var(--c-surface) 82%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--c-border);
+}
+
+/* Reduced motion — respect user preference globally */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* App-level motion opt-out (Settings > Reduced motion) */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
