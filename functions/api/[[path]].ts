@@ -1,11 +1,24 @@
+
 interface Env {
   BACKEND_URL: string;
 }
 
-const handler = async (
-  request: Request,
-  env: Env
-): Promise<Response> => {
+interface PagesContext {
+  request: Request;
+  env: Env;
+}
+
+export const onRequest = async ({
+  request,
+  env,
+}: PagesContext): Promise<Response> => {
+  if (!env?.BACKEND_URL) {
+    return Response.json(
+      { detail: "BACKEND_URL is not configured" },
+      { status: 500 }
+    );
+  }
+
   const backend = env.BACKEND_URL.replace(/\/+$/, "");
   const incoming = new URL(request.url);
 
@@ -39,5 +52,3 @@ const handler = async (
     headers: responseHeaders,
   });
 };
-
-export const onRequest = handler;
