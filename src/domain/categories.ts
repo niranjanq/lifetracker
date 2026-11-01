@@ -40,6 +40,25 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: CAT.other, name: 'Other', icon: 'Shape', essential: false, defaultKind: 'expense', builtin: true },
 ];
 
+/** Pseudo-ids for spending GROUPS — rollups tracked with one monthly limit. */
+export const GROUP = {
+  pocketMoney: 'group-pocket-money',
+} as const;
+
+export interface SpendingGroup {
+  id: string;
+  name: string;
+  /** Real categories whose net expense spend rolls up into the group. */
+  memberCategoryIds: string[];
+}
+
+/** "Monthly pocket money" = one limit over everyday variable spending. */
+export const MONTHLY_POCKET: SpendingGroup = {
+  id: GROUP.pocketMoney,
+  name: 'Monthly pocket money',
+  memberCategoryIds: [CAT.food, CAT.bills, CAT.shopping, CAT.entertainment, CAT.health],
+};
+
 /** Categories that count toward the spending budget when kind === 'expense'. */
 export function isConsumption(kind: string): boolean {
   return kind === 'expense';

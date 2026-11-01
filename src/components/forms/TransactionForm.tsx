@@ -5,8 +5,9 @@ import { transactionSchema, type TransactionForm } from '../../domain/schemas';
 import { useApp } from '../../state/store';
 import { parseToMinor } from '../../domain/money';
 import { currentISODate } from '../../domain/date';
-import { Button, Field, Input, Select } from '../ui/primitives';
-import type { Transaction, TransactionKind } from '../../domain/types';
+import { Button, Field, Input, Select, Textarea } from '../ui/primitives';
+import type { Category, Transaction, TransactionKind } from '../../domain/types';
+import { MONTHLY_POCKET } from '../../domain/categories';
 
 const KINDS: Array<{ value: TransactionKind; label: string; hint: string }> = [
   { value: 'expense', label: 'Expense', hint: 'Consumption — counts against your spending budget' },
@@ -67,6 +68,16 @@ export function TransactionForm({
   const kind = watch('kind');
   const categoryId = watch('categoryId');
   const kindHint = KINDS.find((k) => k.value === kind)?.hint;
+  const visibleCats = categories.filter(
+    (c) => c.defaultKind === kind || (kind === 'expense' && c.defaultKind === 'expense'),
+  );
+  const inPocket = (c: Category) => MONTHLY_POCKET.memberCategoryIds.includes(c.id);
+  const catOption = (c: Category) => (
+    <option key={c.id} value={c.id}>
+      {c.name}
+      {c.essential ? ' •' : ''}
+    </option>
+  );
 
   // When kind changes, preselect a matching category if the current one is incompatible.
   useEffect(() => {
@@ -124,22 +135,26 @@ export function TransactionForm({
       <Field label="Category" error={errors.categoryId?.message} htmlFor="tx-cat">
         <Select id="tx-cat" {...register('categoryId')}>
           <option value="">Select a category…</option>
-          {categories
-            .filter((c) => c.defaultKind === kind || (kind === 'expense' && c.defaultKind === 'expense'))
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {c.essential ? ' •' : ''}
-              </option>
-            ))}
+          {kind === 'expense' && visibleCats.some(inPocket) && (
+            <optgroup label="Monthly pocket money">
+              {visibleCats.filter(inPocket).map(catOption)}
+            </optgroup>
+          )}
+          {(kind === 'expense' ? visibleCats.filter((c) => !inPocket(c)) : visibleCats).map(catOption)}
         </Select>
+      </Field>
+
+      <Field label="Details" hint="Write about this expense in detail (optional)" htmlFor="tx-desc" error={errors.description?.message}>
+        <Textarea
+          id="tx-desc"
+          rows={2}
+          placeholder="e.g. Weekly groceries + paracetamol from the medical store"
+          {...register('description')}
+        />
       </Field>
 
       {!compact && (
         <>
-          <Field label="Description" htmlFor="tx-desc">
-            <Input id="tx-desc" placeholder="e.g. Weekly groceries" {...register('description')} />
-          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Merchant" htmlFor="tx-merchant">
               <Input id="tx-merchant" {...register('merchant')} />

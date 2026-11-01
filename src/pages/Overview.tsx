@@ -61,6 +61,9 @@ export function Overview() {
     ? today.getDate()
     : daysInMonth(month);
   const pacePct = summary.overallBudgetMinor > 0 ? Math.round((summary.netSpendingMinor / summary.overallBudgetMinor) * 100) : 0;
+  const pmPct = summary.pocketMoneyLimitMinor > 0
+    ? Math.round((summary.pocketMoneySpentMinor / summary.pocketMoneyLimitMinor) * 100)
+    : 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -144,6 +147,31 @@ export function Overview() {
           ) : (
             <EmptyState title="No monthly budget set" description="Set a variable-spending budget to track utilization." action={<Link to="/money"><Chip tone="lime">Set budget</Chip></Link>} />
           )}
+          <div className="mt-4 border-t border-line pt-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Monthly pocket money</p>
+              {summary.pocketMoneyLimitMinor > 0 && (
+                <span className="nums text-[12px] text-muted">
+                  {fmt(summary.pocketMoneySpentMinor)} / {fmt(summary.pocketMoneyLimitMinor)}
+                </span>
+              )}
+            </div>
+            {summary.pocketMoneyLimitMinor > 0 ? (
+              <>
+                <div className="mt-2">
+                  <Progress value={pmPct} tone={pmPct >= 100 ? 'coral' : 'lime'} label="Monthly pocket money budget" />
+                </div>
+                <p className="mt-1 text-[12px] text-muted">
+                  {pmPct}% used · remaining {fmt(Math.max(0, summary.pocketMoneyLimitMinor - summary.pocketMoneySpentMinor))}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[12px] text-muted">
+                No limit set —{' '}
+                <Link to="/money" className="font-semibold text-lime hover:underline">set it in Money → Budgets</Link>.
+              </p>
+            )}
+          </div>
         </Card>
 
         <Card>

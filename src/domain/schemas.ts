@@ -15,7 +15,7 @@ export const transactionSchema = z.object({
   date: isoDate,
   kind: z.enum(['income', 'expense', 'transfer', 'investment', 'refund']),
   categoryId: z.string().min(1, 'Choose a category'),
-  description: z.string().max(120).optional(),
+  description: z.string().max(500, 'Keep the details under 500 characters').optional(),
   merchant: z.string().max(60).optional(),
   method: z.string().max(40).optional(),
   note: z.string().max(500).optional(),

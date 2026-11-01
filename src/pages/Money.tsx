@@ -7,7 +7,7 @@ import { useMoney } from '../state/useMoney';
 import { formatDay, formatYearMonth } from '../domain/date';
 import { parseToMinor } from '../domain/money';
 import { toCSV, downloadText } from '../lib/csv';
-import { CAT } from '../domain/categories';
+import { CAT, GROUP, MONTHLY_POCKET } from '../domain/categories';
 import type { Allocation, Budget, SalaryReceipt, Transaction, TransactionKind } from '../domain/types';
 
 type Tab = 'transactions' | 'salary' | 'allocations' | 'budgets';
@@ -383,7 +383,9 @@ function BudgetsTab() {
   if (!data) return null;
   const s = computeFinanceSummary(month, toFinanceData(data, month));
   const overallBudget = data.budgets.find((b) => b.month === month && b.categoryId === null);
-  const catBudgets = data.budgets.filter((b) => b.month === month && b.categoryId);
+  const catBudgets = data.budgets.filter(
+    (b) => b.month === month && b.categoryId && b.categoryId !== GROUP.pocketMoney,
+  );
 
   function saveOverall() {
     const limitMinor = parseToMinor(overall || '0', data!.preferences.currency);
@@ -403,6 +405,8 @@ function BudgetsTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <PocketMoneyCard />
+
       <Card>
         <CardTitle>Overall variable-spending budget</CardTitle>
         {overallBudget ? (
@@ -466,5 +470,82 @@ function BudgetsTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+/* -------------------------- Monthly pocket money ------------------------- */
+function PocketMoneyCard() {
+  const { data, upsertBudget, deleteBudget } = useApp();
+  const { month } = useMonth();
+  const { fmt } = useMoney();
+  const [amount, setAmount] = useState('');
+  if (!data) return null;
+  const s = computeFinanceSummary(month, toFinanceData(data, month));
+  const groupBudget = data.budgets.find((b) => b.month === month && b.categoryId === GROUP.pocketMoney);
+  const limit = s.pocketMoneyLimitMinor;
+  const spent = s.pocketMoneySpentMinor;
+  const pct = limit > 0 ? (spent / limit) * 100 : 0;
+  const netFor = (catId: string) => s.categorySpend.find((c) => c.categoryId === catId)?.netMinor ?? 0;
+  const memberNames = MONTHLY_POCKET.memberCategoryIds
+    .map((id) => data.categories.find((c) => c.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
+
+  function save() {
+    const limitMinor = parseToMinor(amount || '0', data!.preferences.currency);
+    if (!Number.isFinite(limitMinor) || limitMinor <= 0) return;
+    void upsertBudget({
+      id: groupBudget?.id, month, categoryId: GROUP.pocketMoney,
+      limitMinor, createdAt: groupBudget?.createdAt,
+    });
+    setAmount('');
+  }
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardTitle>Monthly pocket money</CardTitle>
+      <p className="mb-3 text-[12px] text-muted">
+        One monthly limit for {memberNames}. Spending below is expenses minus refunds in those categories.
+      </p>
+      <div className="grid gap-5 sm:grid-cols-[1.2fr_1fr]">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-end justify-between">
+            <span className="font-display text-2xl font-bold nums">{fmt(spent)}</span>
+            <span className="text-sm text-muted nums">{limit > 0 ? `of ${fmt(limit)}` : 'no limit set'}</span>
+          </div>
+          {limit > 0 && (
+            <>
+              <Progress value={pct} tone={pct >= 100 ? 'coral' : 'lime'} label="Monthly pocket money budget" />
+              <p className="text-[12px] text-muted">
+                {Math.round(pct)}% used · remaining {fmt(Math.max(0, limit - spent))}
+              </p>
+            </>
+          )}
+          <div className="flex gap-2">
+            <Input
+              inputMode="decimal"
+              placeholder="5000"
+              defaultValue={groupBudget ? (groupBudget.limitMinor / 100).toString() : ''}
+              onChange={(e) => setAmount(e.target.value)}
+              aria-label="Monthly pocket money limit"
+            />
+            <Button variant="primary" onClick={save}>{groupBudget ? 'Update' : 'Set limit'}</Button>
+            {groupBudget && <Button variant="danger" onClick={() => void deleteBudget(groupBudget.id)}>Clear</Button>}
+          </div>
+        </div>
+        <ul className="divide-y divide-line rounded-lg border border-line bg-lowest/40 px-3">
+          {MONTHLY_POCKET.memberCategoryIds.map((id) => {
+            const c = data.categories.find((x) => x.id === id);
+            if (!c) return null;
+            return (
+              <li key={id} className="flex items-center justify-between py-2 text-sm">
+                <span className="text-muted">{c.name}</span>
+                <span className="nums font-semibold text-ink">{fmt(netFor(id))}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </Card>
   );
 }

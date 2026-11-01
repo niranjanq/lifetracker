@@ -24,7 +24,7 @@ import type {
   Transaction,
   YearMonth,
 } from './types';
-import { CAT } from './categories';
+import { CAT, GROUP, MONTHLY_POCKET } from './categories';
 import { sumMinor } from './money';
 
 export interface PlanRecord {
@@ -66,6 +66,8 @@ export interface FinanceSummary {
   overallBudgetMinor: number; // the overall (category-less) budget limit
   remainingBudgetMinor: number; // overall budget - net spending
   budgetUsagePct: number;
+  pocketMoneySpentMinor: number; // net spend across the pocket-money group
+  pocketMoneyLimitMinor: number; // the group's monthly limit (0 = unset)
   categorySpend: CategorySpend[];
 }
 
@@ -127,6 +129,16 @@ export function computeFinanceSummary(month: YearMonth, data: FinanceData): Fina
   const overallBudget = data.budgets.find((b) => b.month === month && b.categoryId === null);
   const overallBudgetMinor = overallBudget?.limitMinor ?? 0;
 
+  // Monthly pocket money: net (refund-adjusted, floored per category) group spend.
+  const pocketMoneySpentMinor = MONTHLY_POCKET.memberCategoryIds.reduce(
+    (sum, id) => sum + categoryNetSpend(month, id, data.transactions),
+    0,
+  );
+  const pocketMoneyBudget = data.budgets.find(
+    (b) => b.month === month && b.categoryId === GROUP.pocketMoney,
+  );
+  const pocketMoneyLimitMinor = pocketMoneyBudget?.limitMinor ?? 0;
+
   const moneyIn = salaryReceivedMinor + otherIncomeMinor;
   const unallocatedMinor = moneyIn - plannedAllocationMinor;
   const oversubscribedMinor = unallocatedMinor < 0 ? -unallocatedMinor : 0;
@@ -152,6 +164,8 @@ export function computeFinanceSummary(month: YearMonth, data: FinanceData): Fina
     overallBudgetMinor,
     remainingBudgetMinor,
     budgetUsagePct,
+    pocketMoneySpentMinor,
+    pocketMoneyLimitMinor,
     categorySpend,
   };
 }

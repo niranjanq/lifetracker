@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeFinanceSummary, categoryNetSpend, categoryBudgetLimit, monthlyTrend } from './finance';
 import type { FinanceData } from './finance';
-import { CAT } from './categories';
+import { CAT, GROUP } from './categories';
 import type { Transaction, SalaryReceipt, Allocation, Budget } from './types';
 
 const M = '2026-10';
@@ -108,6 +108,36 @@ describe('computeFinanceSummary', () => {
       transactions: [tx({ id: 't1', kind: 'expense', amountMinor: 25000, month: '2026-09', date: '2026-09-05' })],
     });
     expect(computeFinanceSummary(M, data).netSpendingMinor).toBe(0);
+  });
+});
+
+describe('monthly pocket money', () => {
+  it('sums net spend across member categories only', () => {
+    const data = baseData({
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 200000, categoryId: CAT.food }),
+        tx({ id: 't2', kind: 'expense', amountMinor: 100000, categoryId: CAT.shopping }),
+        tx({ id: 't3', kind: 'expense', amountMinor: 50000, categoryId: CAT.transport }),
+      ],
+      budgets: [{ id: 'bg1', month: M, categoryId: GROUP.pocketMoney, limitMinor: 500000, createdAt: '' }],
+    });
+    const s = computeFinanceSummary(M, data);
+    expect(s.pocketMoneySpentMinor).toBe(300000); // transport is not a member
+    expect(s.pocketMoneyLimitMinor).toBe(500000);
+  });
+
+  it('nets refunds inside member categories', () => {
+    const data = baseData({
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 200000, categoryId: CAT.health }),
+        tx({ id: 't2', kind: 'refund', amountMinor: 50000, categoryId: CAT.health }),
+      ],
+    });
+    expect(computeFinanceSummary(M, data).pocketMoneySpentMinor).toBe(150000);
+  });
+
+  it('reports a zero limit when no pocket-money budget is set', () => {
+    expect(computeFinanceSummary(M, baseData()).pocketMoneyLimitMinor).toBe(0);
   });
 });
 
