@@ -62,6 +62,11 @@ export function Overview() {
     : daysInMonth(month);
   const pacePct = summary.overallBudgetMinor > 0 ? Math.round((summary.netSpendingMinor / summary.overallBudgetMinor) * 100) : 0;
   const pmPct = summary.pocketMoneyUsagePct;
+  const hasOverallBudget = summary.overallBudgetMinor > 0;
+  const hasPocketPlan = summary.pocketMoneyLimitMinor > 0;
+  // With no overall budget, the remaining card falls back to the pocket-money
+  // plan so the headline number stays meaningful (domain-computed, never here).
+  const remainingShownMinor = !hasOverallBudget && hasPocketPlan ? summary.pocketMoneyRemainingMinor : summary.remainingBudgetMinor;
 
   return (
     <div className="flex flex-col gap-5">
@@ -85,9 +90,9 @@ export function Overview() {
       {/* Financial cards */}
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="Salary received" icon="Wallet" tone="lime" value={fmt(summary.salaryReceivedMinor)} sub={summary.expectedSalaryMinor !== summary.salaryReceivedMinor ? `Expected ${fmt(summary.expectedSalaryMinor)}` : 'Matches expectation'} />
-        <StatCard label="Actual spending" icon="Receipt" tone="coral" value={fmt(summary.netSpendingMinor)} delta={prevSummary && spendDelta !== 0 ? { dir: spendDelta > 0 ? 'up' : 'down', text: `${spendDelta > 0 ? '+' : '−'}${fmt(Math.abs(spendDelta)).replace('-', '')} vs last mo` } : undefined} />
-        <StatCard label="Budget remaining" icon="PiggyBank" tone={summary.remainingBudgetMinor < 0 ? 'coral' : 'lime'} value={fmt(summary.remainingBudgetMinor)} sub={summary.overallBudgetMinor > 0 ? `${pacePct}% of ${fmt(summary.overallBudgetMinor)}` : 'No budget set'} />
-        <StatCard label="Saved / invested" icon="TrendingUp" tone="violet" value={fmt(summary.savedOrInvestedMinor)} sub={`Savings ${fmt(summary.savingsMinor)} · SIP ${fmt(summary.investmentMinor)}`} />
+        <StatCard label="Actual spending" icon="Receipt" tone="coral" value={fmt(summary.netSpendingMinor)} sub={summary.pocketMoneySpentMinor > 0 || hasPocketPlan ? `Pocket ${fmt(summary.pocketMoneySpentMinor)}${hasPocketPlan ? ` · ${pmPct}% of ${fmt(summary.pocketMoneyLimitMinor)}` : ''}` : undefined} delta={prevSummary && spendDelta !== 0 ? { dir: spendDelta > 0 ? 'up' : 'down', text: `${spendDelta > 0 ? '+' : '−'}${fmt(Math.abs(spendDelta)).replace('-', '')} vs last mo` } : undefined} />
+        <StatCard label="Budget remaining" icon="PiggyBank" tone={remainingShownMinor < 0 ? 'coral' : 'lime'} value={fmt(remainingShownMinor)} sub={hasOverallBudget ? `${pacePct}% of ${fmt(summary.overallBudgetMinor)}${hasPocketPlan ? ` · Pocket ${fmt(summary.pocketMoneyRemainingMinor)} left` : ''}` : hasPocketPlan ? `Pocket money · ${pmPct}% of ${fmt(summary.pocketMoneyLimitMinor)} planned` : 'No budget set'} />
+        <StatCard label="Saved / invested" icon="TrendingUp" tone="violet" value={fmt(summary.savedOrInvestedMinor)} sub={`saved: ${fmt(summary.savingsMinor)}, invested: ${fmt(summary.investmentMinor)}`} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">

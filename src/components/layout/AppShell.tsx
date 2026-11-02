@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Plus, LogOut } from 'lucide-react';
 import { NAV } from './nav';
 import { MonthSelector } from './MonthSelector';
@@ -22,7 +22,7 @@ export function AppShell() {
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-line bg-surface/80 px-3 py-5 backdrop-blur-xl lg:flex">
         <div>
-          <div className="mb-6 flex items-center gap-2 px-2">
+          <Link to="/" className="mb-6 flex items-center gap-2 px-2" aria-label="Life Tracker — back to overview">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-lime/15 text-lime shadow-lime">
               <span className="font-display text-lg font-extrabold">P</span>
             </span>
@@ -30,7 +30,7 @@ export function AppShell() {
               <p className="font-display text-[15px] font-bold tracking-tight">Life Tracker</p>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-lime">Money · Health</p>
             </div>
-          </div>
+          </Link>
           <nav className="flex flex-col gap-1">
             {NAV.map((item) => (
               <NavItem key={item.to} item={item} />

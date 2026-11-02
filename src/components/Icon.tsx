@@ -11,6 +11,7 @@ const MAP: Record<string, LucideIcon> = {
   Wallet, Coins, UtensilsCrossed, BusFront, Home, Receipt, ShoppingBag,
   Clapperboard, Pill, HeartHandshake, PiggyBank, TrendingUp, GraduationCap,
   Repeat, Shape: Shapes, LayoutDashboard, Activity, Flame: FlameIcon, Lightbulb, Settings,
+  Sparkles, ArrowDown, Plus,
 };
 
 export function Icon({ name, className, size = 18 }: { name: string; className?: string; size?: number }) {
