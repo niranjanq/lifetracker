@@ -61,9 +61,7 @@ export function Overview() {
     ? today.getDate()
     : daysInMonth(month);
   const pacePct = summary.overallBudgetMinor > 0 ? Math.round((summary.netSpendingMinor / summary.overallBudgetMinor) * 100) : 0;
-  const pmPct = summary.pocketMoneyLimitMinor > 0
-    ? Math.round((summary.pocketMoneySpentMinor / summary.pocketMoneyLimitMinor) * 100)
-    : 0;
+  const pmPct = summary.pocketMoneyUsagePct;
 
   return (
     <div className="flex flex-col gap-5">
@@ -162,13 +160,16 @@ export function Overview() {
                   <Progress value={pmPct} tone={pmPct >= 100 ? 'coral' : 'lime'} label="Monthly pocket money budget" />
                 </div>
                 <p className="mt-1 text-[12px] text-muted">
-                  {pmPct}% used · remaining {fmt(Math.max(0, summary.pocketMoneyLimitMinor - summary.pocketMoneySpentMinor))}
+                  {pmPct}% used · remaining{' '}
+                  <span className={summary.pocketMoneyRemainingMinor < 0 ? 'font-semibold text-coral' : undefined}>
+                    {fmt(summary.pocketMoneyRemainingMinor)}
+                  </span>
                 </p>
               </>
             ) : (
               <p className="mt-1 text-[12px] text-muted">
                 No limit set —{' '}
-                <Link to="/money" className="font-semibold text-lime hover:underline">set it in Money → Budgets</Link>.
+                <Link to="/money" className="font-semibold text-lime hover:underline">set it in Money → Allocations</Link>.
               </p>
             )}
           </div>

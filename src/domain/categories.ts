@@ -59,6 +59,15 @@ export const MONTHLY_POCKET: SpendingGroup = {
   memberCategoryIds: [CAT.food, CAT.bills, CAT.shopping, CAT.entertainment, CAT.health],
 };
 
+export function isPocketMoneyMember(categoryId: string): boolean {
+  return MONTHLY_POCKET.memberCategoryIds.includes(categoryId);
+}
+
+/** True when an allocation/budget targets the pocket-money PARENT. */
+export function isPocketMoneyParent(categoryId: string | null | undefined): boolean {
+  return categoryId === GROUP.pocketMoney;
+}
+
 /** Categories that count toward the spending budget when kind === 'expense'. */
 export function isConsumption(kind: string): boolean {
   return kind === 'expense';

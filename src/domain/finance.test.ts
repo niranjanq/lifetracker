@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeFinanceSummary, categoryNetSpend, categoryBudgetLimit, monthlyTrend } from './finance';
+import { computeFinanceSummary, categoryNetSpend, categoryBudgetLimit, monthlyTrend, allocationActualMinor } from './finance';
 import type { FinanceData } from './finance';
 import { CAT, GROUP } from './categories';
 import type { Transaction, SalaryReceipt, Allocation, Budget } from './types';
@@ -165,5 +165,177 @@ describe('helpers', () => {
     });
     const trend = monthlyTrend(['2026-10', '2026-11'], data);
     expect(trend.map((t) => t.netSpendingMinor)).toEqual([1000, 2000]);
+  });
+});
+
+describe('pocket money parent allocation', () => {
+  const parent = (over: Partial<Allocation> = {}): Allocation => ({
+    id: 'alloc-pm', month: M, categoryId: GROUP.pocketMoney, label: 'Pocket money', plannedMinor: 1000000, createdAt: '', ...over,
+  });
+  const legacyBudget: Budget = { id: 'bg-pm', month: M, categoryId: GROUP.pocketMoney, limitMinor: 500000, createdAt: '' };
+
+  it('uses the parent allocation amount when present', () => {
+    const s = computeFinanceSummary(M, baseData({ allocations: [parent()] }));
+    expect(s.pocketMoneyHasParentAllocation).toBe(true);
+    expect(s.pocketMoneyLimitMinor).toBe(1000000);
+  });
+
+  it('a ₹0 parent beats a legacy budget (existence, not amount)', () => {
+    const s = computeFinanceSummary(M, baseData({ allocations: [parent({ plannedMinor: 0 })], budgets: [legacyBudget] }));
+    expect(s.pocketMoneyHasParentAllocation).toBe(true);
+    expect(s.pocketMoneyLimitMinor).toBe(0);
+  });
+
+  it('falls back to the legacy budget only when no parent exists', () => {
+    const s = computeFinanceSummary(M, baseData({ budgets: [legacyBudget] }));
+    expect(s.pocketMoneyHasParentAllocation).toBe(false);
+    expect(s.pocketMoneyLimitMinor).toBe(500000);
+  });
+
+  it('neither parent nor budget means zero', () => {
+    const s = computeFinanceSummary(M, baseData());
+    expect(s.pocketMoneyLimitMinor).toBe(0);
+    expect(s.pocketMoneyUsagePct).toBe(0);
+    expect(s.pocketMoneyRemainingMinor).toBe(0);
+  });
+
+  it('duplicate parents resolve consistently: first record wins, extras are legacy', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent({ id: 'p1', plannedMinor: 600000 }), parent({ id: 'p2', plannedMinor: 400000 })],
+    }));
+    expect(s.pocketMoneyLimitMinor).toBe(600000); // same record the UI edits
+    expect(s.legacyChildAllocationIds).toEqual(['p2']);
+    expect(s.plannedAllocationMinor).toBe(600000); // no double planning
+  });
+
+  it('parent overrides the legacy budget when both exist', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent({ plannedMinor: 800000 })], budgets: [legacyBudget],
+    }));
+    expect(s.pocketMoneyLimitMinor).toBe(800000);
+  });
+
+  it('task example: 1000 shopping + 500 food - 300 refund = 1200 of 5000', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent({ plannedMinor: 500000 })],
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 100000, categoryId: CAT.shopping }),
+        tx({ id: 't2', kind: 'expense', amountMinor: 50000, categoryId: CAT.food }),
+        tx({ id: 't3', kind: 'refund', amountMinor: 30000, categoryId: CAT.shopping }),
+      ],
+    }));
+    expect(s.pocketMoneySpentMinor).toBe(120000);
+    expect(s.pocketMoneyRemainingMinor).toBe(380000);
+    expect(s.pocketMoneyUsagePct).toBe(24);
+    expect(s.pocketMoneyBreakdown.map((c) => c.categoryId).sort()).toEqual([CAT.food, CAT.shopping].sort());
+  });
+
+  it('aggregates all five child categories', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent()],
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 150000, categoryId: CAT.food }),
+        tx({ id: 't2', kind: 'expense', amountMinor: 200000, categoryId: CAT.shopping }),
+        tx({ id: 't3', kind: 'expense', amountMinor: 50000, categoryId: CAT.health }),
+        tx({ id: 't4', kind: 'expense', amountMinor: 100000, categoryId: CAT.bills }),
+        tx({ id: 't5', kind: 'expense', amountMinor: 50000, categoryId: CAT.entertainment }),
+      ],
+    }));
+    expect(s.pocketMoneySpentMinor).toBe(550000);
+    expect(s.pocketMoneyRemainingMinor).toBe(450000);
+    expect(s.pocketMoneyBreakdown).toHaveLength(5);
+  });
+
+  it('non-member categories never reduce pocket money', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent()],
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 40000, categoryId: CAT.transport }),
+        tx({ id: 't2', kind: 'expense', amountMinor: 40000, categoryId: CAT.education }),
+        tx({ id: 't3', kind: 'expense', amountMinor: 40000, categoryId: CAT.subscriptions }),
+        tx({ id: 't4', kind: 'expense', amountMinor: 40000, categoryId: CAT.other }),
+      ],
+    }));
+    expect(s.pocketMoneySpentMinor).toBe(0);
+  });
+
+  it('multiple refunds net; refunds never cross categories', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent()],
+      transactions: [
+        tx({ id: 't1', kind: 'expense', amountMinor: 100000, categoryId: CAT.shopping }),
+        tx({ id: 't2', kind: 'refund', amountMinor: 10000, categoryId: CAT.shopping }),
+        tx({ id: 't3', kind: 'refund', amountMinor: 20000, categoryId: CAT.shopping }),
+        tx({ id: 't4', kind: 'expense', amountMinor: 50000, categoryId: CAT.food }),
+        tx({ id: 't5', kind: 'refund', amountMinor: 80000, categoryId: CAT.food }), // exceeds expense -> floors at 0
+      ],
+    }));
+    expect(s.pocketMoneySpentMinor).toBe(70000); // 70000 + 0
+  });
+
+  it('overspending yields negative remaining and >100% usage', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent({ plannedMinor: 500000 })],
+      transactions: [tx({ id: 't1', kind: 'expense', amountMinor: 700000, categoryId: CAT.food })],
+    }));
+    expect(s.pocketMoneyRemainingMinor).toBe(-200000);
+    expect(s.pocketMoneyUsagePct).toBe(140);
+  });
+
+  it('month-wise isolation for parents and transactions', () => {
+    const s = computeFinanceSummary(M, baseData({
+      allocations: [parent({ month: '2026-09' })],
+      transactions: [tx({ id: 't1', kind: 'expense', amountMinor: 100000, categoryId: CAT.food, month: '2026-09', date: '2026-09-10' })],
+    }));
+    expect(s.pocketMoneyLimitMinor).toBe(0);
+    expect(s.pocketMoneySpentMinor).toBe(0);
+  });
+
+  it('editing/deleting transactions, refunds and the parent recomputes (nothing is stored)', () => {
+    const spent = (allocs: Allocation[], txns: Transaction[]) =>
+      computeFinanceSummary(M, baseData({ allocations: allocs, transactions: txns })).pocketMoneySpentMinor;
+    const expense = tx({ id: 't1', kind: 'expense', amountMinor: 100000, categoryId: CAT.shopping });
+    const refund = tx({ id: 't2', kind: 'refund', amountMinor: 30000, categoryId: CAT.shopping });
+    expect(spent([parent()], [expense, refund])).toBe(70000);
+    expect(spent([parent()], [{ ...expense, amountMinor: 150000 }, refund])).toBe(120000); // edit expense
+    expect(spent([parent()], [expense, { ...refund, amountMinor: 60000 }])).toBe(40000); // edit refund
+    expect(spent([parent()], [refund])).toBe(0); // delete expense
+    expect(spent([parent()], [expense])).toBe(100000); // delete refund
+    expect(spent([parent()], [{ ...expense, categoryId: CAT.rent }, refund])).toBe(0); // category change
+    expect(spent([], [expense, refund])).toBe(70000); // spend is derived from transactions, not allocations
+    expect(computeFinanceSummary(M, baseData({ transactions: [expense, refund] })).pocketMoneyLimitMinor).toBe(0); // parent removed -> fallback gone
+    const limitAfterEdit = computeFinanceSummary(M, baseData({ allocations: [parent({ plannedMinor: 1200000 })] })).pocketMoneyLimitMinor;
+    expect(limitAfterEdit).toBe(1200000); // edit parent
+  });
+
+  it('historical child allocations are preserved, flagged and not double-counted', () => {
+    const child: Allocation = { id: 'alloc-child', month: M, categoryId: CAT.shopping, label: 'Shopping plan', plannedMinor: 200000, createdAt: '' };
+    const rent: Allocation = { id: 'alloc-rent', month: M, categoryId: CAT.rent, label: 'Rent', plannedMinor: 800000, createdAt: '' };
+    const withParent = computeFinanceSummary(M, baseData({ allocations: [parent(), child, rent] }));
+    expect(withParent.legacyChildAllocationIds).toEqual(['alloc-child']); // preserved, just flagged
+    expect(withParent.plannedAllocationMinor).toBe(1800000); // parent + rent; child not double-planned
+    const withoutParent = computeFinanceSummary(M, baseData({ allocations: [child, rent] }));
+    expect(withoutParent.legacyChildAllocationIds).toEqual([]); // historical months unchanged
+    expect(withoutParent.plannedAllocationMinor).toBe(1000000);
+  });
+
+  it('independent allocation actuals via the domain engine', () => {
+    const data = baseData({
+      transactions: [
+        tx({ id: 't1', kind: 'transfer', amountMinor: 800000, categoryId: CAT.rent }),
+        tx({ id: 't2', kind: 'transfer', amountMinor: 500000, categoryId: CAT.family }),
+        tx({ id: 't3', kind: 'investment', amountMinor: 300000, categoryId: CAT.sip }),
+        tx({ id: 't4', kind: 'transfer', amountMinor: 200000, categoryId: CAT.savings }),
+        tx({ id: 't5', kind: 'expense', amountMinor: 100000, categoryId: CAT.food }),
+        tx({ id: 't6', kind: 'refund', amountMinor: 40000, categoryId: CAT.food }),
+        tx({ id: 't7', kind: 'income', amountMinor: 900000, categoryId: CAT.rent }), // must be ignored
+      ],
+    });
+    expect(allocationActualMinor(M, CAT.rent, data)).toBe(800000);
+    expect(allocationActualMinor(M, CAT.family, data)).toBe(500000);
+    expect(allocationActualMinor(M, CAT.sip, data)).toBe(300000);
+    expect(allocationActualMinor(M, CAT.savings, data)).toBe(200000);
+    expect(allocationActualMinor(M, CAT.food, data)).toBe(60000); // refund netted
+    expect(allocationActualMinor(M, GROUP.pocketMoney, data)).toBe(60000); // parent = sum of member nets
   });
 });

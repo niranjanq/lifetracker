@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Card, CardTitle, Button, Chip, EmptyState, Modal, Field, Input, Select, Progress, ConfirmDialog } from '../components/ui/primitives';
 import { TransactionForm } from '../components/forms/TransactionForm';
 import { useApp, computeFinanceSummary, toFinanceData } from '../state/store';
@@ -7,7 +8,8 @@ import { useMoney } from '../state/useMoney';
 import { formatDay, formatYearMonth } from '../domain/date';
 import { parseToMinor } from '../domain/money';
 import { toCSV, downloadText } from '../lib/csv';
-import { CAT, GROUP, MONTHLY_POCKET } from '../domain/categories';
+import { CAT, GROUP, MONTHLY_POCKET, isPocketMoneyMember, isPocketMoneyParent } from '../domain/categories';
+import { allocationActualMinor, usagePct } from '../domain/finance';
 import type { Allocation, Budget, SalaryReceipt, Transaction, TransactionKind } from '../domain/types';
 
 type Tab = 'transactions' | 'salary' | 'allocations' | 'budgets';
@@ -322,52 +324,158 @@ function AllocationsTab() {
   const { month } = useMonth();
   const { fmt } = useMoney();
   const [form, setForm] = useState<{ label: string; categoryId: string; amount: string }>({ label: '', categoryId: CAT.rent, amount: '' });
+  const [expanded, setExpanded] = useState(false);
+  const [editAmount, setEditAmount] = useState('');
   if (!data) return null;
+  const fdata = toFinanceData(data, month);
+  const s = computeFinanceSummary(month, fdata);
   const rows = data.allocations.filter((a) => a.month === month);
-  const txByCat = (catId: string) =>
-    data.transactions.filter((t) => t.month === month && t.categoryId === catId && (t.kind === 'transfer' || t.kind === 'investment' || t.kind === 'expense'))
-      .reduce((sum, t) => sum + t.amountMinor, 0);
+  // Same record the domain treats as authoritative (the FIRST parent).
+  const parent = rows.find((a) => isPocketMoneyParent(a.categoryId));
+  const legacySet = new Set(s.legacyChildAllocationIds);
+  const activeStandalone = rows.filter((a) => a !== parent && !legacySet.has(a.id));
+  const legacyRows = rows.filter((a) => legacySet.has(a.id));
+  const catById = new Map(data.categories.map((c) => [c.id, c]));
+  const netFor = (catId: string) => s.pocketMoneyBreakdown.find((c) => c.categoryId === catId)?.netMinor ?? 0;
+  // Child categories are covered by the parent — never offered standalone.
+  const standaloneOptions = data.categories.filter((c) => c.defaultKind !== 'income' && !isPocketMoneyMember(c.id));
+  const pmOver = s.pocketMoneyUsagePct >= 100;
+  const pmWarn = !pmOver && s.pocketMoneyUsagePct >= 90;
+  const pmWatch = !pmOver && !pmWarn && s.pocketMoneyUsagePct >= 75;
 
   function add() {
-    const amountMinor = parseToMinor(form.amount || '0', data!.preferences.currency);
-    if (!form.label || !Number.isFinite(amountMinor) || amountMinor <= 0) return;
-    void upsertAllocation({ month, categoryId: form.categoryId, label: form.label, plannedMinor: amountMinor });
+    if (!data) return;
+    const isParent = isPocketMoneyParent(form.categoryId);
+    if (isParent && parent) return; // one Pocket Money allocation per month
+    const label = form.label.trim() || (isParent ? MONTHLY_POCKET.name : '');
+    if (!label) return;
+    const amountMinor = parseToMinor(form.amount || '0', data.preferences.currency);
+    if (!Number.isFinite(amountMinor) || amountMinor < 0) return; // ₹0 is a valid explicit plan
+    void upsertAllocation({ month, categoryId: form.categoryId, label, plannedMinor: amountMinor });
     setForm({ label: '', categoryId: form.categoryId, amount: '' });
+  }
+
+  function saveParent() {
+    if (!data || !parent) return;
+    const amountMinor = parseToMinor(editAmount || '0', data.preferences.currency);
+    if (!Number.isFinite(amountMinor) || amountMinor < 0) return;
+    void upsertAllocation({ ...parent, plannedMinor: amountMinor }); // same id => update, no duplicate
+    setEditAmount('');
   }
 
   return (
     <Card>
       <CardTitle>Planned monthly allocations · {formatYearMonth(month)}</CardTitle>
-      <p className="mb-3 text-[12px] text-muted">A plan is not a payment. Actual vs planned updates automatically from your transactions.</p>
+      <p className="mb-3 text-[12px] text-muted">
+        A plan is not a payment. Pocket Money is the parent allocation — its balance is computed automatically from
+        every expense (net of refunds) in its child categories.
+      </p>
       <div className="mb-4 flex flex-wrap gap-2">
         <Input placeholder="Label (e.g. Room rent)" value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className="max-w-[200px]" aria-label="Allocation label" />
-        <Select value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))} className="max-w-[180px]" aria-label="Allocation category">
-          {data.categories.filter((c) => c.defaultKind !== 'income').map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+        <Select value={form.categoryId} onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))} className="max-w-[220px]" aria-label="Allocation category">
+          {!parent && <option value={GROUP.pocketMoney}>{MONTHLY_POCKET.name} (parent)</option>}
+          {standaloneOptions.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
         </Select>
         <Input placeholder="Amount" inputMode="decimal" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="max-w-[120px]" aria-label="Allocation amount" />
         <Button variant="primary" onClick={add}>Add</Button>
       </div>
       {rows.length ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {rows.map((a: Allocation) => {
-            const actual = txByCat(a.categoryId);
-            return (
-              <div key={a.id} className="rounded-lg border border-line bg-lowest/40 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-ink">{a.label}</span>
-                  <Button size="sm" variant="ghost" onClick={() => void deleteAllocation(a.id)}>Remove</Button>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-[12px] text-muted nums">
-                  <span>Planned {fmt(a.plannedMinor)}</span>
-                  <span>Actual {fmt(actual)}</span>
-                </div>
-                <div className="mt-2"><Progress value={a.plannedMinor > 0 ? (actual / a.plannedMinor) * 100 : 0} tone={actual > a.plannedMinor ? 'coral' : 'lime'} label={`${a.label} progress`} /></div>
+        <>
+          {parent && (
+            <div className="mb-3 rounded-lg border border-line bg-lowest/40 p-3">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded} aria-label="Toggle pocket money breakdown" className="rounded-md p-1 text-muted hover:bg-raised hover:text-ink">
+                    <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {parent.label}
+                  <Chip tone="violet">parent</Chip>
+                  {pmOver && <Chip tone="coral">Over allocated</Chip>}
+                  {pmWarn && <Chip tone="coral">Warning</Chip>}
+                  {pmWatch && <Chip tone="muted">Watch</Chip>}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => void deleteAllocation(parent.id)}>Remove</Button>
               </div>
-            );
-          })}
-        </div>
+              <div className="mt-1 flex items-center justify-between text-[12px] text-muted nums">
+                <span>Planned {fmt(s.pocketMoneyLimitMinor)}</span>
+                <span>Spent {fmt(s.pocketMoneySpentMinor)}</span>
+              </div>
+              <div className="mt-2"><Progress value={s.pocketMoneyUsagePct} tone={s.pocketMoneyUsagePct >= 90 ? 'coral' : 'lime'} label="Pocket money progress" /></div>
+              <div className="mt-1 flex items-center justify-between text-[12px]">
+                <span className={s.pocketMoneyRemainingMinor < 0 ? 'nums font-semibold text-coral' : 'nums text-muted'}>
+                  Remaining {fmt(s.pocketMoneyRemainingMinor)}
+                </span>
+                <span className="text-muted">{s.pocketMoneyUsagePct}% used</span>
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Input inputMode="decimal" placeholder={(parent.plannedMinor / 100).toString()} value={editAmount} onChange={(e) => setEditAmount(e.target.value)} className="max-w-[140px]" aria-label="New pocket money planned amount" />
+                <Button variant="primary" onClick={saveParent}>Update</Button>
+              </div>
+              {expanded && (
+                <ul className="mt-2 divide-y divide-line rounded-lg border border-line bg-surface/60 px-3">
+                  {MONTHLY_POCKET.memberCategoryIds.map((id) => (
+                    <li key={id} className="flex items-center justify-between py-1.5 text-[12px]">
+                      <span className="text-muted">{catById.get(id)?.name ?? id}</span>
+                      <span className="nums font-semibold text-ink">{fmt(netFor(id))}</span>
+                    </li>
+                  ))}
+                  <li className="flex items-center justify-between py-1.5 text-[12px] font-semibold">
+                    <span className="text-ink">Total spent</span>
+                    <span className="nums text-ink">{fmt(s.pocketMoneySpentMinor)}</span>
+                  </li>
+                </ul>
+              )}
+            </div>
+          )}
+          {activeStandalone.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {activeStandalone.map((a: Allocation) => {
+                const actual = allocationActualMinor(month, a.categoryId, fdata);
+                const pct = usagePct(actual, a.plannedMinor);
+                const remaining = a.plannedMinor - actual;
+                return (
+                  <div key={a.id} className="rounded-lg border border-line bg-lowest/40 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-ink">{a.label}</span>
+                      <Button size="sm" variant="ghost" onClick={() => void deleteAllocation(a.id)}>Remove</Button>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-[12px] text-muted nums">
+                      <span>Planned {fmt(a.plannedMinor)}</span>
+                      <span>Actual {fmt(actual)}</span>
+                    </div>
+                    <div className="mt-2"><Progress value={pct} tone={pct >= 90 ? 'coral' : 'lime'} label={`${a.label} progress`} /></div>
+                    <div className="mt-1 flex items-center justify-between text-[12px]">
+                      <span className={remaining < 0 ? 'nums font-semibold text-coral' : 'nums text-muted'}>Remaining {fmt(remaining)}</span>
+                      <span className="text-muted">{pct}% used</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {legacyRows.length > 0 && (
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Legacy allocations · superseded by Pocket Money</p>
+              <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                {legacyRows.map((a: Allocation) => (
+                  <li key={a.id} className="flex items-center justify-between rounded-lg border border-line bg-lowest/40 px-3 py-2 text-[12px]">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-ink">{a.label}</span>
+                      <Chip tone="muted">legacy</Chip>
+                      <span className="nums text-muted">
+                        {catById.get(a.categoryId)?.name ?? ''} · planned {fmt(a.plannedMinor)} · spent {fmt(allocationActualMinor(month, a.categoryId, fdata))}
+                      </span>
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={() => void deleteAllocation(a.id)}>Remove</Button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[11px] text-muted">Kept for history. Their spending is already inside Pocket Money — remove to tidy up.</p>
+            </div>
+          )}
+        </>
       ) : (
-        <EmptyState title="No allocations planned" description="Plan rent, SIP, family, savings and variable spending." />
+        <EmptyState title="No allocations planned" description="Add your Pocket Money parent allocation, then rent, SIP, family and savings." />
       )}
     </Card>
   );
@@ -405,8 +513,6 @@ function BudgetsTab() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <PocketMoneyCard />
-
       <Card>
         <CardTitle>Overall variable-spending budget</CardTitle>
         {overallBudget ? (
@@ -470,82 +576,5 @@ function BudgetsTab() {
         )}
       </Card>
     </div>
-  );
-}
-
-/* -------------------------- Monthly pocket money ------------------------- */
-function PocketMoneyCard() {
-  const { data, upsertBudget, deleteBudget } = useApp();
-  const { month } = useMonth();
-  const { fmt } = useMoney();
-  const [amount, setAmount] = useState('');
-  if (!data) return null;
-  const s = computeFinanceSummary(month, toFinanceData(data, month));
-  const groupBudget = data.budgets.find((b) => b.month === month && b.categoryId === GROUP.pocketMoney);
-  const limit = s.pocketMoneyLimitMinor;
-  const spent = s.pocketMoneySpentMinor;
-  const pct = limit > 0 ? (spent / limit) * 100 : 0;
-  const netFor = (catId: string) => s.categorySpend.find((c) => c.categoryId === catId)?.netMinor ?? 0;
-  const memberNames = MONTHLY_POCKET.memberCategoryIds
-    .map((id) => data.categories.find((c) => c.id === id)?.name)
-    .filter(Boolean)
-    .join(', ');
-
-  function save() {
-    const limitMinor = parseToMinor(amount || '0', data!.preferences.currency);
-    if (!Number.isFinite(limitMinor) || limitMinor <= 0) return;
-    void upsertBudget({
-      id: groupBudget?.id, month, categoryId: GROUP.pocketMoney,
-      limitMinor, createdAt: groupBudget?.createdAt,
-    });
-    setAmount('');
-  }
-
-  return (
-    <Card className="lg:col-span-2">
-      <CardTitle>Monthly pocket money</CardTitle>
-      <p className="mb-3 text-[12px] text-muted">
-        One monthly limit for {memberNames}. Spending below is expenses minus refunds in those categories.
-      </p>
-      <div className="grid gap-5 sm:grid-cols-[1.2fr_1fr]">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-end justify-between">
-            <span className="font-display text-2xl font-bold nums">{fmt(spent)}</span>
-            <span className="text-sm text-muted nums">{limit > 0 ? `of ${fmt(limit)}` : 'no limit set'}</span>
-          </div>
-          {limit > 0 && (
-            <>
-              <Progress value={pct} tone={pct >= 100 ? 'coral' : 'lime'} label="Monthly pocket money budget" />
-              <p className="text-[12px] text-muted">
-                {Math.round(pct)}% used · remaining {fmt(Math.max(0, limit - spent))}
-              </p>
-            </>
-          )}
-          <div className="flex gap-2">
-            <Input
-              inputMode="decimal"
-              placeholder="5000"
-              defaultValue={groupBudget ? (groupBudget.limitMinor / 100).toString() : ''}
-              onChange={(e) => setAmount(e.target.value)}
-              aria-label="Monthly pocket money limit"
-            />
-            <Button variant="primary" onClick={save}>{groupBudget ? 'Update' : 'Set limit'}</Button>
-            {groupBudget && <Button variant="danger" onClick={() => void deleteBudget(groupBudget.id)}>Clear</Button>}
-          </div>
-        </div>
-        <ul className="divide-y divide-line rounded-lg border border-line bg-lowest/40 px-3">
-          {MONTHLY_POCKET.memberCategoryIds.map((id) => {
-            const c = data.categories.find((x) => x.id === id);
-            if (!c) return null;
-            return (
-              <li key={id} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-muted">{c.name}</span>
-                <span className="nums font-semibold text-ink">{fmt(netFor(id))}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </Card>
   );
 }

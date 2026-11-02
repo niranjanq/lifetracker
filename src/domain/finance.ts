@@ -67,7 +67,12 @@ export interface FinanceSummary {
   remainingBudgetMinor: number; // overall budget - net spending
   budgetUsagePct: number;
   pocketMoneySpentMinor: number; // net spend across the pocket-money group
-  pocketMoneyLimitMinor: number; // the group's monthly limit (0 = unset)
+  pocketMoneyLimitMinor: number; // parent allocation when present (even ₹0); else legacy budget
+  pocketMoneyHasParentAllocation: boolean; // record existence, NOT amount comparison
+  pocketMoneyRemainingMinor: number; // limit - spent (negative when overspent)
+  pocketMoneyUsagePct: number; // spent/limit*100 (0 when limit unset)
+  pocketMoneyBreakdown: CategorySpend[]; // member categories only
+  legacyChildAllocationIds: string[]; // child/duplicate-parent allocations superseded this month
   categorySpend: CategorySpend[];
 }
 
@@ -86,8 +91,25 @@ export function computeFinanceSummary(month: YearMonth, data: FinanceData): Fina
     txns.filter((t) => t.kind === 'income' && t.categoryId !== CAT.salary).map((t) => t.amountMinor),
   );
 
+  const monthAllocations = byMonth(data.allocations, month);
+  const parentAllocations = monthAllocations.filter((a) => a.categoryId === GROUP.pocketMoney);
+  const pocketMoneyHasParentAllocation = parentAllocations.length > 0;
+  // One parent per month is the policy: the FIRST record is authoritative —
+  // exactly the record the UI edits. Any extra parent records and child-category
+  // allocations are superseded (their spend already flows into Pocket Money) and
+  // excluded from the ACTIVE plan total. Records are never deleted or mutated;
+  // months without a parent keep their historical meaning unchanged.
+  const legacyChildAllocationIds = pocketMoneyHasParentAllocation
+    ? monthAllocations
+        .filter(
+          (a) =>
+            a !== parentAllocations[0] &&
+            (MONTHLY_POCKET.memberCategoryIds.includes(a.categoryId) || a.categoryId === GROUP.pocketMoney),
+        )
+        .map((a) => a.id)
+    : [];
   const plannedAllocationMinor = sumMinor(
-    byMonth(data.allocations, month).map((a) => a.plannedMinor),
+    monthAllocations.filter((a) => !legacyChildAllocationIds.includes(a.id)).map((a) => a.plannedMinor),
   );
 
   // Consumption spending, netted per category against refunds of the same category.
@@ -134,17 +156,26 @@ export function computeFinanceSummary(month: YearMonth, data: FinanceData): Fina
     (sum, id) => sum + categoryNetSpend(month, id, data.transactions),
     0,
   );
+  const pocketMoneyBreakdown = categorySpend.filter((cs) =>
+    MONTHLY_POCKET.memberCategoryIds.includes(cs.categoryId),
+  );
+  // The parent allocation takes precedence whenever a record EXISTS — even with
+  // a zero amount (existence, not amount). The legacy group budget is a
+  // fallback only when there is no parent record at all.
   const pocketMoneyBudget = data.budgets.find(
     (b) => b.month === month && b.categoryId === GROUP.pocketMoney,
   );
-  const pocketMoneyLimitMinor = pocketMoneyBudget?.limitMinor ?? 0;
+  const pocketMoneyLimitMinor = pocketMoneyHasParentAllocation
+    ? parentAllocations[0].plannedMinor
+    : pocketMoneyBudget?.limitMinor ?? 0;
+  const pocketMoneyRemainingMinor = pocketMoneyLimitMinor - pocketMoneySpentMinor;
+  const pocketMoneyUsagePct = usagePct(pocketMoneySpentMinor, pocketMoneyLimitMinor);
 
   const moneyIn = salaryReceivedMinor + otherIncomeMinor;
   const unallocatedMinor = moneyIn - plannedAllocationMinor;
   const oversubscribedMinor = unallocatedMinor < 0 ? -unallocatedMinor : 0;
   const remainingBudgetMinor = overallBudgetMinor - netSpendingMinor;
-  const budgetUsagePct =
-    overallBudgetMinor > 0 ? Math.round((netSpendingMinor / overallBudgetMinor) * 100) : 0;
+  const budgetUsagePct = usagePct(netSpendingMinor, overallBudgetMinor);
 
   return {
     month,
@@ -166,8 +197,41 @@ export function computeFinanceSummary(month: YearMonth, data: FinanceData): Fina
     budgetUsagePct,
     pocketMoneySpentMinor,
     pocketMoneyLimitMinor,
+    pocketMoneyHasParentAllocation,
+    pocketMoneyRemainingMinor,
+    pocketMoneyUsagePct,
+    pocketMoneyBreakdown,
+    legacyChildAllocationIds,
     categorySpend,
   };
+}
+
+/** Spend as a percentage of a limit (0 when the limit is unset). */
+export function usagePct(spentMinor: number, limitMinor: number): number {
+  return limitMinor > 0 ? Math.round((spentMinor / limitMinor) * 100) : 0;
+}
+
+/**
+ * Actual committed amount for one allocation this month: every non-income kind
+ * minus refunds in the SAME category, floored at 0. The pocket-money PARENT
+ * aggregates the net spend of its child categories. Single source of truth for
+ * the allocations UI — components must not recompute money.
+ */
+export function allocationActualMinor(month: YearMonth, categoryId: string, data: FinanceData): number {
+  if (categoryId === GROUP.pocketMoney) {
+    return MONTHLY_POCKET.memberCategoryIds.reduce(
+      (sum, id) => sum + categoryNetSpend(month, id, data.transactions),
+      0,
+    );
+  }
+  let committed = 0;
+  let refunded = 0;
+  for (const t of byMonth(data.transactions, month)) {
+    if (t.categoryId !== categoryId) continue;
+    if (t.kind === 'refund') refunded += t.amountMinor;
+    else if (t.kind !== 'income') committed += t.amountMinor;
+  }
+  return Math.max(0, committed - refunded);
 }
 
 /** Net spending for one category in a month (expenses minus refunds, floored at 0). */
