@@ -1,22 +1,31 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './state/store';
 import { MonthProvider } from './state/month';
 import { AuthProvider, useAuth } from './state/auth';
 import { AppShell } from './components/layout/AppShell';
 import { ToastHost } from './components/ToastHost';
 import { Spinner, Button } from './components/ui/primitives';
-import { Onboarding } from './pages/Onboarding';
-import { Overview } from './pages/Overview';
-import { Money } from './pages/Money';
-import { Health } from './pages/Health';
-import { Roast } from './pages/Roast';
-import { Insights } from './pages/Insights';
-import { Assistant } from './pages/Assistant';
-import { Settings } from './pages/Settings';
-import { Login } from './pages/Login';
-import { CheckEmail } from './pages/CheckEmail';
-import { ForgotPassword } from './pages/ForgotPassword';
-import { ResetPassword } from './pages/ResetPassword';
+import { Seo } from './components/Seo';
+import { NotFound } from './components/NotFound';
+
+const Onboarding = lazy(() => import('./pages/Onboarding').then((m) => ({ default: m.Onboarding })));
+const Overview = lazy(() => import('./pages/Overview').then((m) => ({ default: m.Overview })));
+const Money = lazy(() => import('./pages/Money').then((m) => ({ default: m.Money })));
+const Health = lazy(() => import('./pages/Health').then((m) => ({ default: m.Health })));
+const Roast = lazy(() => import('./pages/Roast').then((m) => ({ default: m.Roast })));
+const Insights = lazy(() => import('./pages/Insights').then((m) => ({ default: m.Insights })));
+const Assistant = lazy(() => import('./pages/Assistant').then((m) => ({ default: m.Assistant })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const CheckEmail = lazy(() => import('./pages/CheckEmail').then((m) => ({ default: m.CheckEmail })));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then((m) => ({ default: m.ForgotPassword })));
+const ResetPassword = lazy(() => import('./pages/ResetPassword').then((m) => ({ default: m.ResetPassword })));
+
+const KNOWN_PATHS = new Set([
+  '/', '/money', '/health', '/roast', '/insights', '/assistant', '/settings',
+  '/login', '/check-email', '/forgot-password', '/reset-password',
+]);
 
 function Splash({ label }: { label: string }) {
   return (
@@ -48,7 +57,6 @@ function Boot() {
   const { status, error, data, reload } = useApp();
 
   if (status === 'loading') return <Splash label="Loading your data…" />;
-
   if (status === 'error') {
     return (
       <div className="grid min-h-screen place-items-center px-6">
@@ -63,9 +71,7 @@ function Boot() {
     );
   }
 
-  if (!data?.preferences.onboarded) {
-    return <Onboarding />;
-  }
+  if (!data?.preferences.onboarded) return <Onboarding />;
 
   return (
     <MonthProvider>
@@ -78,7 +84,7 @@ function Boot() {
           <Route path="insights" element={<Insights />} />
           <Route path="assistant" element={<Assistant />} />
           <Route path="settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </MonthProvider>
@@ -88,38 +94,44 @@ function Boot() {
 /** Auth-aware top-level gate: login / email flows, then the authenticated app. */
 function Gate() {
   const { status, error, refresh } = useAuth();
+  const { pathname } = useLocation();
 
   return (
-    <Routes>
-      <Route path="/check-email" element={<CheckEmail />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/login" element={status === 'authed' ? <Navigate to="/" replace /> : <Login />} />
-      <Route
-        path="/*"
-        element={
-          status === 'checking' ? (
-            <Splash label="Checking your session…" />
-          ) : status === 'unreachable' ? (
-            <Unreachable error={error} onRetry={() => void refresh()} />
-          ) : status === 'anon' ? (
-            <Login />
-          ) : (
-            <AppProvider>
-              <Boot />
-              <ToastHost />
-            </AppProvider>
-          )
-        }
-      />
-    </Routes>
+    <>
+      <Seo />
+      <Routes>
+        <Route path="/check-email" element={<CheckEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/login" element={status === 'authed' ? <Navigate to="/" replace /> : <Login />} />
+        <Route
+          path="/*"
+          element={
+            status === 'checking' ? (
+              <Splash label="Checking your session…" />
+            ) : status === 'unreachable' ? (
+              <Unreachable error={error} onRetry={() => void refresh()} />
+            ) : status === 'anon' ? (
+              KNOWN_PATHS.has(pathname) ? <Login /> : <NotFound />
+            ) : (
+              <AppProvider>
+                <Boot />
+                <ToastHost />
+              </AppProvider>
+            )
+          }
+        />
+      </Routes>
+    </>
   );
 }
 
 export function App() {
   return (
     <AuthProvider>
-      <Gate />
+      <Suspense fallback={<Splash label="Loading Life Tracker…" />}>
+        <Gate />
+      </Suspense>
     </AuthProvider>
   );
 }
