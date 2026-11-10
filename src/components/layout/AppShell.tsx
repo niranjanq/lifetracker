@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { Plus, LogOut } from 'lucide-react';
 import { NAV } from './nav';
+import { Breadcrumbs } from './Breadcrumbs';
 import { MonthSelector } from './MonthSelector';
 import { AssistantWidget } from './AssistantWidget';
 import { Modal, Button } from '../ui/primitives';
