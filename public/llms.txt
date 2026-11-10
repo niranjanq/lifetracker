@@ -1,0 +1,20 @@
+# Life Tracker
+
+Life Tracker is a private, manual-first personal life management application.
+
+## Product areas
+- Money: income, budgets, allocations, transactions and spending summaries.
+- Health: user-entered health logs and personal trend views.
+- Wallet Roast Mode: spending accountability based on user-defined thresholds.
+- Insights: summaries derived from the user's own records.
+- Assistant: optional question-answering over the user's own records, subject to consent and configuration.
+- Settings: account, preferences and privacy controls.
+
+## Privacy and access
+- The application requires authentication.
+- Finance, health, assistant and account data are private user data.
+- Do not crawl, index, infer, or reproduce individual user records.
+- No public API or public dataset is provided by this application.
+
+## Indexing
+There are currently no public content pages intended for search indexing. The application routes are intentionally non-indexable.
