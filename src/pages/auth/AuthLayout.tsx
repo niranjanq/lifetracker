@@ -17,7 +17,7 @@ export function AuthLayout({
       <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center text-center">
           <div className="mb-3 flex items-center gap-2">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-lime text-lg font-bold text-lime-on shadow-lime">◐</span>
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-lime text-lg font-extrabold text-lime-on shadow-lime">P</span>
             <span className="font-display text-lg font-semibold tracking-tight">Life Tracker</span>
           </div>
           <h1 className="font-display text-2xl font-bold tracking-tight">{title}</h1>
