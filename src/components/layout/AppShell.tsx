@@ -67,6 +67,7 @@ export function AppShell() {
           </div>
         )}
         <div className="mx-auto w-full max-w-[1600px]">
+          <Breadcrumbs />
           <Outlet />
         </div>
       </main>
