@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080D18"/><stop offset="1" stop-color="#17152D"/>
+    </linearGradient>
+    <radialGradient id="glow"><stop stop-color="#B7F34A" stop-opacity=".28"/><stop offset="1" stop-color="#B7F34A" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1000" cy="100" r="420" fill="url(#glow)"/>
+  <rect x="92" y="92" width="82" height="82" rx="24" fill="#B7F34A"/>
+  <path d="M124 112h30v14h-14v34h-16z" fill="#101827"/>
+  <text x="92" y="282" fill="#F4F7FB" font-family="Inter,Arial,sans-serif" font-size="76" font-weight="800">Life Tracker</text>
+  <text x="96" y="354" fill="#B7F34A" font-family="Inter,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="5">MONEY · HEALTH · CLARITY</text>
+  <text x="96" y="424" fill="#AAB4C5" font-family="Inter,Arial,sans-serif" font-size="28">A private, manual-first personal dashboard.</text>
+  <rect x="96" y="492" width="1008" height="1" fill="#FFFFFF" opacity=".14"/>
+  <text x="96" y="540" fill="#8E9AAF" font-family="Inter,Arial,sans-serif" font-size="18">Your records stay yours.</text>
+</svg>
