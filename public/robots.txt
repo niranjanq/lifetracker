@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /
+
+# Life Tracker is an authenticated application, not a public content site.
+# Do not expose private finance, health, assistant, or account routes to crawlers.
